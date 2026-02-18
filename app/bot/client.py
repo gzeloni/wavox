@@ -21,14 +21,54 @@ def create_bot():
 
     @bot.event
     async def on_voice_state_update(member, before, after):
-        """Cleanup when bot leaves voice channel"""
         if member == bot.user and before.channel is not None and after.channel is None:
-            # Bot was disconnected from voice
             from services.music import clear_queue
             if before.channel.guild:
                 clear_queue(before.channel.guild.id)
                 print(
                     f"🧹 Cleaned up queue for guild {before.channel.guild.id}")
+
+    @bot.event
+    async def on_raw_reaction_add(payload):
+        if payload.user_id == bot.user.id:
+            return
+        if str(payload.emoji) != '❤️':
+            return
+        from services.music import _active_np_messages, current_tracks
+        from services.database import log_event
+        guild_id = payload.guild_id
+        if not guild_id:
+            return
+        if _active_np_messages.get(guild_id) != payload.message_id:
+            return
+        track = current_tracks.get(guild_id)
+        if not track:
+            return
+        try:
+            log_event(guild_id, payload.user_id, 'like', track['title'])
+        except Exception:
+            pass
+
+    @bot.event
+    async def on_raw_reaction_remove(payload):
+        if payload.user_id == bot.user.id:
+            return
+        if str(payload.emoji) != '❤️':
+            return
+        from services.music import _active_np_messages, current_tracks
+        from services.database import log_event
+        guild_id = payload.guild_id
+        if not guild_id:
+            return
+        if _active_np_messages.get(guild_id) != payload.message_id:
+            return
+        track = current_tracks.get(guild_id)
+        if not track:
+            return
+        try:
+            log_event(guild_id, payload.user_id, 'unlike', track['title'])
+        except Exception:
+            pass
 
     from bot.commands import register_commands
     register_commands(bot)

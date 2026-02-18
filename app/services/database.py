@@ -109,10 +109,17 @@ def get_user_status(guild_id, user_id):
         (guild_id, user_id, since)
     ).fetchone()['c']
 
-    total_likes = conn.execute(
+    raw_likes = conn.execute(
         "SELECT COUNT(*) as c FROM user_events WHERE guild_id = ? AND user_id = ? AND event_type = 'like' AND created_at >= ?",
         (guild_id, user_id, since)
     ).fetchone()['c']
+
+    unlikes = conn.execute(
+        "SELECT COUNT(*) as c FROM user_events WHERE guild_id = ? AND user_id = ? AND event_type = 'unlike' AND created_at >= ?",
+        (guild_id, user_id, since)
+    ).fetchone()['c']
+
+    total_likes = max(0, raw_likes - unlikes)
 
     top_tracks = conn.execute(
         "SELECT track_title, COUNT(*) as plays FROM play_history WHERE guild_id = ? AND user_id = ? AND played_at >= ? GROUP BY track_title ORDER BY plays DESC LIMIT 5",

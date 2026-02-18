@@ -14,6 +14,7 @@ _seeking = {}
 _loop_modes = {}
 _history = {}
 _skip_history = {}
+_active_np_messages = {}
 INACTIVITY_TIMEOUT = 300
 HISTORY_LIMIT = 10
 
@@ -119,11 +120,15 @@ async def _player_loop(voice_client, first_track, guild_id, channel):
 
             try:
                 embed = build_now_playing_embed(track)
-                await channel.send(embed=embed)
+                np_msg = await channel.send(embed=embed)
+                _active_np_messages[guild_id] = np_msg.id
+                await np_msg.add_reaction('❤️')
             except Exception:
                 pass
 
             await event.wait()
+
+            _active_np_messages.pop(guild_id, None)
 
             if not voice_client.is_connected():
                 break
@@ -210,6 +215,20 @@ def add_to_queue(guild_id, track):
     queues[guild_id].append(track)
 
 
+def clear_queue_only(guild_id):
+    if guild_id in queues:
+        queues[guild_id].clear()
+
+
+def skip_to_position(guild_id, position):
+    if guild_id not in queues or not queues[guild_id]:
+        return 0
+    position = min(position, len(queues[guild_id]))
+    if position > 1:
+        del queues[guild_id][:position - 1]
+    return position
+
+
 def clear_queue(guild_id):
     if guild_id in queues:
         del queues[guild_id]
@@ -223,6 +242,7 @@ def clear_queue(guild_id):
         del _history[guild_id]
     if guild_id in _skip_history:
         del _skip_history[guild_id]
+    _active_np_messages.pop(guild_id, None)
     if guild_id in _player_tasks:
         _player_tasks[guild_id].cancel()
         del _player_tasks[guild_id]

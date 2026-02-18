@@ -4,9 +4,9 @@ import os
 import random
 
 from services.music import (
-    add_to_queue, start_player, clear_queue, parse_time, seek_track,
-    queues, current_tracks, cycle_loop_mode, pop_history,
-    skip_history_once, build_now_playing_embed, _format_duration
+    add_to_queue, start_player, clear_queue, clear_queue_only, parse_time,
+    seek_track, skip_to_position, queues, current_tracks, cycle_loop_mode,
+    pop_history, skip_history_once, build_now_playing_embed, _format_duration
 )
 from services.database import get_recent, get_top_tracks, get_most_active, log_event, get_user_status
 from services.youtube import get_youtube_url, search_youtube, resolve_youtube_entry
@@ -199,22 +199,49 @@ def register_commands(bot):
         else:
             await interaction.followup.send("❌ Not in a voice channel")
 
-    @bot.tree.command(name="skip", description="Skip to next song")
-    async def skip(interaction: discord.Interaction):
+    @bot.tree.command(name="skip", description="Skip current or jump to queue position")
+    @discord.app_commands.describe(position="Queue position to skip to (e.g. 3 = skip to 3rd in queue)")
+    async def skip(interaction: discord.Interaction, position: int = None):
         await interaction.response.defer(ephemeral=True)
         voice_client = interaction.guild.voice_client
         guild_id = interaction.guild_id
 
-        if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
-            track = current_tracks.get(guild_id)
+        if not voice_client or (not voice_client.is_playing() and not voice_client.is_paused()):
+            return await interaction.followup.send("❌ Nothing playing")
+
+        track = current_tracks.get(guild_id)
+
+        if position and position > 1:
+            queue_len = len(queues.get(guild_id, []))
+            if queue_len == 0:
+                return await interaction.followup.send("❌ Queue is empty")
+            if position > queue_len:
+                return await interaction.followup.send(f"❌ Queue only has {queue_len} tracks")
+            skipped = skip_to_position(guild_id, position)
+            voice_client.stop()
+            try:
+                log_event(guild_id, interaction.user.id, 'skip', track['title'] if track else None)
+            except Exception:
+                pass
+            await interaction.followup.send(f"⏭️ Skipped to position {position} ({skipped - 1} tracks removed)")
+        else:
             voice_client.stop()
             try:
                 log_event(guild_id, interaction.user.id, 'skip', track['title'] if track else None)
             except Exception:
                 pass
             await interaction.followup.send("⏭️ Skipped")
-        else:
-            await interaction.followup.send("❌ Nothing playing")
+
+    @bot.tree.command(name="clear", description="Clear the queue (keeps current track playing)")
+    async def clear(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        guild_id = interaction.guild_id
+        queue = queues.get(guild_id, [])
+        if not queue:
+            return await interaction.followup.send("📋 Queue is already empty")
+        count = len(queue)
+        clear_queue_only(guild_id)
+        await interaction.followup.send(f"🗑️ Cleared {count} tracks from the queue")
 
     @bot.tree.command(name="queue", description="Show current queue")
     async def queue_cmd(interaction: discord.Interaction):
@@ -374,19 +401,6 @@ def register_commands(bot):
                 inline=False
             )
         await interaction.followup.send(embed=embed)
-
-    @bot.tree.command(name="like", description="Like the current track")
-    async def like(interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        guild_id = interaction.guild_id
-        track = current_tracks.get(guild_id)
-        if not track:
-            return await interaction.followup.send("❌ Nothing playing")
-        try:
-            log_event(guild_id, interaction.user.id, 'like', track['title'])
-        except Exception:
-            pass
-        await interaction.followup.send(f"❤️ Liked **{track['title']}**")
 
     @bot.tree.command(name="status", description="Your listening stats (last 30 days)")
     @discord.app_commands.describe(user="User to check (default: yourself)")
@@ -590,8 +604,12 @@ def register_commands(bot):
         await stop(TextInteraction(ctx))
 
     @bot.command(name="skip")
-    async def skip_text(ctx):
-        await skip(TextInteraction(ctx))
+    async def skip_text(ctx, position: int = None):
+        await skip(TextInteraction(ctx), position)
+
+    @bot.command(name="clear")
+    async def clear_text(ctx):
+        await clear(TextInteraction(ctx))
 
     @bot.command(name="queue")
     async def queue_text(ctx):
@@ -644,10 +662,6 @@ def register_commands(bot):
     @bot.command(name="mostplayed")
     async def mostplayed_text(ctx):
         await mostplayed(TextInteraction(ctx))
-
-    @bot.command(name="like")
-    async def like_text(ctx):
-        await like(TextInteraction(ctx))
 
     @bot.command(name="status")
     async def status_text(ctx, user: discord.User = None):

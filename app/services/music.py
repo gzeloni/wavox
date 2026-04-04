@@ -1,29 +1,102 @@
+import logging
+import time
 import discord
 import asyncio
+from dataclasses import dataclass, field
+from collections import deque
 from utils.config import FFMPEG_OPTIONS, FFMPEG_PATH
 from services.youtube import refresh_url
 from services.database import log_play
 
+log = logging.getLogger(__name__)
 
-queues = {}
-current_tracks = {}
-_play_events = {}
-_player_tasks = {}
-_inactivity_tasks = {}
-_seeking = {}
-_loop_modes = {}
-_history = {}
-_skip_history = {}
-_active_np_messages = {}
 INACTIVITY_TIMEOUT = 300
 HISTORY_LIMIT = 10
 
 
+@dataclass
+class GuildPlayer:
+    queue: deque = field(default_factory=deque)
+    current_track: dict | None = None
+    play_event: asyncio.Event | None = None
+    player_task: asyncio.Task | None = None
+    inactivity_task: asyncio.Task | None = None
+    seeking: bool = False
+    loop_mode: str = 'off'
+    history: list = field(default_factory=list)
+    skip_history: bool = False
+    active_np_message: int | None = None
+    playback_start_time: float | None = None
+    playback_offset: float = 0
+    pause_time: float | None = None
+
+
+_players: dict[int, GuildPlayer] = {}
+
+
+def get_player(guild_id: int) -> GuildPlayer:
+    if guild_id not in _players:
+        _players[guild_id] = GuildPlayer()
+    return _players[guild_id]
+
+
+def get_current_track(guild_id: int) -> dict | None:
+    p = _players.get(guild_id)
+    return p.current_track if p else None
+
+
+def get_queue(guild_id: int) -> deque:
+    return get_player(guild_id).queue
+
+
+def get_active_np_message(guild_id: int) -> int | None:
+    p = _players.get(guild_id)
+    return p.active_np_message if p else None
+
+
+def _notify_redis(guild_id):
+    from services.message_bus import notify_state
+    notify_state(guild_id)
+
+
+def get_elapsed(guild_id):
+    p = _players.get(guild_id)
+    if not p or p.playback_start_time is None:
+        return 0
+    if p.pause_time is not None:
+        return p.playback_offset + (p.pause_time - p.playback_start_time)
+    return p.playback_offset + (time.time() - p.playback_start_time)
+
+
+def pause_playback(guild_id):
+    get_player(guild_id).pause_time = time.time()
+
+
+def resume_playback(guild_id):
+    p = get_player(guild_id)
+    if p.pause_time is not None:
+        paused_elapsed = p.pause_time - (p.playback_start_time or p.pause_time)
+        p.playback_offset += paused_elapsed
+        p.playback_start_time = time.time()
+        p.pause_time = None
+
+
 def parse_time(time_str):
-    if ':' in time_str:
-        mins, secs = time_str.split(':')
-        return int(mins) * 60 + int(secs)
-    return int(time_str)
+    try:
+        if ':' in time_str:
+            parts = time_str.split(':')
+            if len(parts) != 2:
+                raise ValueError
+            mins, secs = int(parts[0]), int(parts[1])
+            if mins < 0 or secs < 0 or secs >= 60:
+                raise ValueError
+            return mins * 60 + secs
+        val = int(time_str)
+        if val < 0:
+            raise ValueError
+        return val
+    except (ValueError, TypeError):
+        raise ValueError(f"Invalid time format: {time_str}")
 
 
 def _format_duration(seconds):
@@ -33,11 +106,30 @@ def _format_duration(seconds):
     return f"{minutes}:{secs:02d}"
 
 
-def build_now_playing_embed(track):
+def build_now_playing_embed(track, guild_id=None):
     embed = discord.Embed(title=track['title'], color=discord.Color.blue())
-    duration = _format_duration(track.get('duration'))
+
+    duration = track.get('duration')
+    elapsed = None
+    if guild_id:
+        p = _players.get(guild_id)
+        if p and p.playback_start_time is not None:
+            elapsed = get_elapsed(guild_id)
+
     if duration:
-        embed.add_field(name="Duration", value=duration, inline=True)
+        dur_str = _format_duration(duration)
+        if elapsed is not None:
+            elapsed = min(elapsed, duration)
+            el_str = _format_duration(elapsed)
+            total = int(duration)
+            pos = int(elapsed)
+            bar_len = 12
+            filled = round(pos / total * bar_len) if total > 0 else 0
+            bar = '━' * filled + '●' + '─' * (bar_len - filled)
+            embed.add_field(name="Progress", value=f"`{el_str}` {bar} `{dur_str}`", inline=False)
+        else:
+            embed.add_field(name="Duration", value=dur_str, inline=True)
+
     if track.get('webpage_url'):
         embed.add_field(name="Source", value=f"[YouTube]({track['webpage_url']})", inline=True)
     if track.get('thumbnail'):
@@ -53,7 +145,7 @@ async def _create_source(track):
                 url, **FFMPEG_OPTIONS, executable=FFMPEG_PATH
             )
         except Exception as e:
-            print(f"FFmpegPCMAudio attempt {attempt + 1} failed: {e}")
+            log.warning("FFmpegPCMAudio attempt %d failed: %s", attempt + 1, e)
             if attempt == 0 and 'webpage_url' in track:
                 new_url = await refresh_url(track['webpage_url'])
                 if new_url:
@@ -63,32 +155,23 @@ async def _create_source(track):
     return None
 
 
-def _get_event(guild_id):
-    if guild_id not in _play_events:
-        _play_events[guild_id] = asyncio.Event()
-    return _play_events[guild_id]
-
-
-def signal_next(guild_id):
-    if guild_id in _play_events:
-        _play_events[guild_id].set()
-
-
 async def start_player(voice_client, track, guild_id, channel):
-    if guild_id in _player_tasks:
-        task = _player_tasks[guild_id]
-        if not task.done():
-            add_to_queue(guild_id, track)
-            return
+    p = get_player(guild_id)
+    if p.player_task and not p.player_task.done():
+        add_to_queue(guild_id, track)
+        return
 
     _cancel_inactivity_timer(guild_id)
-    _player_tasks[guild_id] = asyncio.create_task(
+    p.player_task = asyncio.create_task(
         _player_loop(voice_client, track, guild_id, channel)
     )
 
 
 async def _player_loop(voice_client, first_track, guild_id, channel):
-    event = _get_event(guild_id)
+    p = get_player(guild_id)
+    if not p.play_event:
+        p.play_event = asyncio.Event()
+    event = p.play_event
     loop = asyncio.get_running_loop()
     track = first_track
 
@@ -96,11 +179,14 @@ async def _player_loop(voice_client, first_track, guild_id, channel):
         while track:
             source = await _create_source(track)
             if not source:
-                print(f"Failed to create source for: {track.get('title')}")
+                log.warning("Failed to create source for: %s", track.get('title'))
                 track = _next_track(guild_id)
                 continue
 
-            current_tracks[guild_id] = track
+            p.current_track = track
+            p.playback_start_time = time.time()
+            p.playback_offset = 0
+            p.pause_time = None
             event.clear()
 
             try:
@@ -117,62 +203,68 @@ async def _player_loop(voice_client, first_track, guild_id, channel):
                 source,
                 after=lambda e, gid=guild_id, lp=loop: _on_track_end(e, gid, lp)
             )
+            _notify_redis(guild_id)
 
             try:
-                embed = build_now_playing_embed(track)
+                embed = build_now_playing_embed(track, guild_id)
                 np_msg = await channel.send(embed=embed)
-                _active_np_messages[guild_id] = np_msg.id
+                p.active_np_message = np_msg.id
                 await np_msg.add_reaction('❤️')
             except Exception:
                 pass
 
             await event.wait()
+            _notify_redis(guild_id)
 
-            _active_np_messages.pop(guild_id, None)
+            p.active_np_message = None
+            p.playback_start_time = None
+            p.playback_offset = 0
+            p.pause_time = None
 
             if not voice_client.is_connected():
                 break
 
-            mode = _loop_modes.get(guild_id, 'off')
-            if mode == 'track':
+            if p.loop_mode == 'track':
                 pass
             else:
-                if not _skip_history.get(guild_id):
-                    if guild_id not in _history:
-                        _history[guild_id] = []
-                    _history[guild_id].append(track)
-                    if len(_history[guild_id]) > HISTORY_LIMIT:
-                        _history[guild_id].pop(0)
-                _skip_history[guild_id] = False
-                if mode == 'queue':
+                if not p.skip_history:
+                    p.history.append(track)
+                    if len(p.history) > HISTORY_LIMIT:
+                        p.history.pop(0)
+                p.skip_history = False
+                if p.loop_mode == 'queue':
                     add_to_queue(guild_id, track)
                 track = _next_track(guild_id)
     except asyncio.CancelledError:
         raise
     except Exception as e:
-        print(f"Player loop error for guild {guild_id}: {e}")
+        log.error("Player loop error for guild %s: %s", guild_id, e)
     finally:
-        if guild_id in current_tracks:
-            del current_tracks[guild_id]
-        if guild_id in _player_tasks:
-            del _player_tasks[guild_id]
+        p.current_track = None
+        p.player_task = None
+        p.playback_start_time = None
+        p.playback_offset = 0
+        p.pause_time = None
         if voice_client.is_connected():
             _start_inactivity_timer(voice_client, guild_id)
 
 
 def _on_track_end(error, guild_id, loop):
     if error:
-        print(f"Player error: {error}")
-    if _seeking.get(guild_id):
+        log.error("Player error: %s", error)
+    p = _players.get(guild_id)
+    if p and p.seeking:
         return
-    loop.call_soon_threadsafe(_play_events[guild_id].set)
+    if p and p.play_event:
+        loop.call_soon_threadsafe(p.play_event.set)
 
 
 async def seek_track(voice_client, guild_id, pos_sec):
-    track = current_tracks.get(guild_id)
-    if not track:
+    p = _players.get(guild_id)
+    if not p or not p.current_track:
         return False
 
+    track = p.current_track
     url = track['url']
     if 'webpage_url' in track:
         new_url = await refresh_url(track['webpage_url'])
@@ -183,102 +275,115 @@ async def seek_track(voice_client, guild_id, pos_sec):
     try:
         source = discord.FFmpegPCMAudio(
             url,
-            before_options=f"-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss {pos_sec}",
-            options="-vn",
+            before_options=f"-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -analyzeduration 2000000 -probesize 524288 -ss {pos_sec}",
+            options="-vn -ar 48000 -ac 2 -bufsize 256k",
             executable=FFMPEG_PATH
         )
     except Exception:
         return False
 
     loop = asyncio.get_running_loop()
-    _seeking[guild_id] = True
+    p.seeking = True
     voice_client.stop()
     await asyncio.sleep(0.05)
-    _seeking[guild_id] = False
+    p.seeking = False
+
+    p.playback_start_time = time.time()
+    p.playback_offset = pos_sec
+    p.pause_time = None
 
     voice_client.play(
         source,
         after=lambda e, gid=guild_id, lp=loop: _on_track_end(e, gid, lp)
     )
+    _notify_redis(guild_id)
     return True
 
 
 def _next_track(guild_id):
-    if guild_id in queues and queues[guild_id]:
-        return queues[guild_id].pop(0)
+    p = _players.get(guild_id)
+    if p and p.queue:
+        return p.queue.popleft()
     return None
 
 
 def add_to_queue(guild_id, track):
-    if guild_id not in queues:
-        queues[guild_id] = []
-    queues[guild_id].append(track)
+    get_player(guild_id).queue.append(track)
+    _notify_redis(guild_id)
 
 
 def clear_queue_only(guild_id):
-    if guild_id in queues:
-        queues[guild_id].clear()
+    p = _players.get(guild_id)
+    if p:
+        p.queue.clear()
+    _notify_redis(guild_id)
 
 
 def skip_to_position(guild_id, position):
-    if guild_id not in queues or not queues[guild_id]:
+    p = _players.get(guild_id)
+    if not p or not p.queue:
         return 0
-    position = min(position, len(queues[guild_id]))
+    position = min(position, len(p.queue))
     if position > 1:
-        del queues[guild_id][:position - 1]
+        for _ in range(position - 1):
+            p.queue.popleft()
     return position
 
 
 def clear_queue(guild_id):
-    if guild_id in queues:
-        del queues[guild_id]
-    if guild_id in current_tracks:
-        del current_tracks[guild_id]
-    if guild_id in _seeking:
-        del _seeking[guild_id]
-    if guild_id in _loop_modes:
-        del _loop_modes[guild_id]
-    if guild_id in _history:
-        del _history[guild_id]
-    if guild_id in _skip_history:
-        del _skip_history[guild_id]
-    _active_np_messages.pop(guild_id, None)
-    if guild_id in _player_tasks:
-        _player_tasks[guild_id].cancel()
-        del _player_tasks[guild_id]
-    if guild_id in _play_events:
-        _play_events[guild_id].set()
+    p = _players.get(guild_id)
+    if not p:
+        return
+    p.queue.clear()
+    p.current_track = None
+    p.seeking = False
+    p.loop_mode = 'off'
+    p.history.clear()
+    p.skip_history = False
+    p.active_np_message = None
+    p.playback_start_time = None
+    p.playback_offset = 0
+    p.pause_time = None
+    if p.player_task:
+        p.player_task.cancel()
+        p.player_task = None
+    if p.play_event:
+        p.play_event.set()
+        p.play_event = None
     _cancel_inactivity_timer(guild_id)
+    _notify_redis(guild_id)
 
 
 def cycle_loop_mode(guild_id):
-    current = _loop_modes.get(guild_id, 'off')
+    p = get_player(guild_id)
     modes = ['off', 'track', 'queue']
-    next_mode = modes[(modes.index(current) + 1) % 3]
-    _loop_modes[guild_id] = next_mode
-    return next_mode
+    p.loop_mode = modes[(modes.index(p.loop_mode) + 1) % 3]
+    _notify_redis(guild_id)
+    return p.loop_mode
 
 
 def pop_history(guild_id):
-    hist = _history.get(guild_id, [])
-    if hist:
-        return hist.pop()
+    p = _players.get(guild_id)
+    if p and p.history:
+        return p.history.pop()
     return None
 
 
 def skip_history_once(guild_id):
-    _skip_history[guild_id] = True
+    get_player(guild_id).skip_history = True
 
 
 def _cancel_inactivity_timer(guild_id):
-    if guild_id in _inactivity_tasks:
-        _inactivity_tasks[guild_id].cancel()
-        del _inactivity_tasks[guild_id]
+    p = _players.get(guild_id)
+    if p and p.inactivity_task:
+        p.inactivity_task.cancel()
+        p.inactivity_task = None
 
 
 def _start_inactivity_timer(voice_client, guild_id):
     _cancel_inactivity_timer(guild_id)
-    _inactivity_tasks[guild_id] = asyncio.create_task(
+    p = get_player(guild_id)
+    p.inactivity_task = asyncio.create_task(
         _inactivity_disconnect(voice_client, guild_id)
     )
 
@@ -288,11 +393,12 @@ async def _inactivity_disconnect(voice_client, guild_id):
         await asyncio.sleep(INACTIVITY_TIMEOUT)
         if voice_client.is_connected() and not voice_client.is_playing() and not voice_client.is_paused():
             await voice_client.disconnect()
-            print(f"⏱️ Disconnected from guild {guild_id} due to inactivity")
+            log.info("Disconnected from guild %s due to inactivity", guild_id)
     except asyncio.CancelledError:
         pass
     except Exception:
         pass
     finally:
-        if guild_id in _inactivity_tasks:
-            del _inactivity_tasks[guild_id]
+        p = _players.get(guild_id)
+        if p:
+            p.inactivity_task = None

@@ -6,8 +6,18 @@ import os
 from utils.config import FFMPEG_PATH, MAX_FILE_SIZE
 
 
+async def _run_ffmpeg(cmd, output_path, temp_dir):
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, lambda: subprocess.run(cmd, check=True, stderr=subprocess.PIPE))
+
+    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        if os.path.getsize(output_path) > MAX_FILE_SIZE:
+            return None, "File too large"
+        return output_path, temp_dir
+    return None, "Failed to create file"
+
+
 async def create_clip(url, start_sec, end_sec, format="mp3"):
-    """Create audio clip from URL with start and end time"""
     temp_dir = tempfile.mkdtemp()
     output_path = os.path.join(temp_dir, f"clip.{format}")
 
@@ -21,21 +31,12 @@ async def create_clip(url, start_sec, end_sec, format="mp3"):
             '-q:a', '4',
             output_path
         ]
-
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, lambda: subprocess.run(cmd, check=True, stderr=subprocess.PIPE))
-
-        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            if os.path.getsize(output_path) > MAX_FILE_SIZE:
-                return None, "File too large"
-            return output_path, temp_dir
-        return None, "Failed to create file"
+        return await _run_ffmpeg(cmd, output_path, temp_dir)
     except Exception as e:
         return None, str(e)
 
 
 async def download_audio(url, title, format="mp3"):
-    """Download audio from URL and convert to specified format"""
     temp_dir = tempfile.mkdtemp()
     output_path = os.path.join(temp_dir, f"download.{format}")
 
@@ -47,22 +48,13 @@ async def download_audio(url, title, format="mp3"):
             '-q:a', '4',
             output_path
         ]
-
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, lambda: subprocess.run(cmd, check=True, stderr=subprocess.PIPE))
-
-        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-            if os.path.getsize(output_path) > MAX_FILE_SIZE:
-                return None, "File too large"
-            return output_path, temp_dir
-        return None, "Failed to create file"
+        return await _run_ffmpeg(cmd, output_path, temp_dir)
     except Exception as e:
         return None, str(e)
 
 
 def cleanup_temp_dir(temp_dir):
-    """Clean up temporary directory"""
     try:
         shutil.rmtree(temp_dir, ignore_errors=True)
-    except:
+    except Exception:
         pass

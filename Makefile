@@ -9,6 +9,6 @@ run:
 	docker compose -f docker-compose.yaml up -d
 
 clean:
-	docker compose -f docker-compose.yaml down --rmi all
+	docker compose -f docker-compose.yaml down --rmi local
 
 deploy: clean build run

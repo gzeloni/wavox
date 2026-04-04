@@ -9,9 +9,9 @@ SPOTIFY_CLIENT_SECRET = getenv("SPOTIFY_CLIENT_SECRET")
 SPOTIFY_MARKET = getenv("SPOTIFY_MARKET", "US")
 
 SPOTIFY_PATTERNS = {
-    'track': re.compile(r'https://open\.spotify\.com/track/([a-zA-Z0-9]+)'),
-    'playlist': re.compile(r'https://open\.spotify\.com/playlist/([a-zA-Z0-9]+)'),
-    'album': re.compile(r'https://open\.spotify\.com/album/([a-zA-Z0-9]+)')
+    'track': re.compile(r'https://open\.spotify\.com/(?:intl-[a-z]{2}/)?track/([a-zA-Z0-9]+)'),
+    'playlist': re.compile(r'https://open\.spotify\.com/(?:intl-[a-z]{2}/)?playlist/([a-zA-Z0-9]+)'),
+    'album': re.compile(r'https://open\.spotify\.com/(?:intl-[a-z]{2}/)?album/([a-zA-Z0-9]+)')
 }
 
 YDL_OPTS = {
@@ -24,13 +24,16 @@ YDL_OPTS = {
     'retries': 3,
     'extract_flat': False,
     'nocheckcertificate': False,
-    'http_chunk_size': 10485760,
+    'http_chunk_size': 1048576,
     'prefer_free_formats': False,
 }
 
 FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn'
+    'before_options': (
+        '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
+        ' -analyzeduration 2000000 -probesize 524288'
+    ),
+    'options': '-vn -ar 48000 -ac 2 -bufsize 256k'
 }
 
 MAX_QUEUE_DISPLAY = 10

@@ -2,13 +2,12 @@
 
 ## System Components
 
-Wavox is composed of four primary services:
+Wavox is composed of three primary services:
 
 | Component | Responsibility |
 |---|---|
 | `discord-bot` | Executes commands, manages guild voice sessions, resolves tracks, and controls playback |
-| `web` | Hosts OAuth, sessions, REST APIs, admin endpoints, lyrics lookups, and WebSocket connections |
-| `web-frontend` | Provides the dashboard UI in SvelteKit |
+| `web-frontend` | Provides the dashboard UI in SvelteKit and hosts OAuth, APIs, docs pages, and WebSocket connections |
 | `redis` | Carries commands and state events between backend services |
 
 ## Data Flow
@@ -21,14 +20,14 @@ Wavox is composed of four primary services:
    - Spotify track/album/playlist through Spotify APIs plus YouTube resolution
 3. The playback engine creates an FFmpeg source and streams audio to Discord.
 4. The bot writes playback state updates to Redis.
-5. The web backend relays normalized state to dashboard clients through WebSockets.
+5. The frontend service relays normalized state to dashboard clients through WebSockets.
 
 ### Dashboard Flow
 
 1. A browser authenticates through Discord OAuth.
-2. FastAPI stores a signed session cookie.
+2. The SvelteKit server stores a signed session cookie.
 3. The SvelteKit frontend requests guild data and opens a guild-specific WebSocket.
-4. FastAPI subscribes to Redis events for that guild.
+4. The frontend server subscribes to Redis events for that guild.
 5. The frontend receives:
    - `state_update` messages for queue and playback state
    - `lyrics_update` messages when the current track changes
@@ -50,17 +49,14 @@ Wavox is composed of four primary services:
 - `spotify.py`: Spotify intake and track expansion
 - `database.py`: SQLite schema and analytics queries
 
-### `web/`
-
-- `server.py`: FastAPI application for API, OAuth, sessions, WebSockets, and lyrics transport
-- `docs/`: MkDocs content for the public documentation pages
-
 ### `web-frontend/`
 
 - `src/lib/components/`: dashboard UI components
 - `src/lib/stores/`: reactive state for sessions, playback, and lyrics
 - `src/lib/ws.ts`: guild-scoped WebSocket client
 - `src/routes/`: application, dashboard redirect, landing, and admin pages
+- `server/`: shared Node-side modules for sessions, OAuth, Redis, lyrics, and WebSocket handling
+- `server.js`: custom Node entrypoint that hosts SvelteKit HTTP and guild WebSockets
 
 ## State and Persistence
 
@@ -98,7 +94,7 @@ The message bus periodically emits normalized playback snapshots. The frontend r
 
 The expected deployment model is:
 
-1. Docker Compose runs `discord-bot`, `web`, `web-frontend`, and `redis`
+1. Docker Compose runs `discord-bot`, `web-frontend`, and `redis`
 2. A reverse proxy exposes the frontend publicly
-3. The proxy forwards `/api/*` and OAuth routes to FastAPI
-4. The frontend remains the public browser-facing entrypoint
+3. The frontend handles `/api/*`, OAuth routes, `/docs`, and WebSockets directly
+4. Redis remains internal to the stack

@@ -2,18 +2,20 @@
 
 <div align="center">
 
+  <img src="media/wavox.png" alt="Wavox icon" width="160" height="160" />
+
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00?logo=svelte&logoColor=white)](https://kit.svelte.dev/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![Docker Compose](https://img.shields.io/badge/Docker_Compose-Ready-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
 [![License](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 </div>
 
-Wavox is a self-hosted Discord music bot platform with a real-time web dashboard. It combines Discord voice playback, YouTube and Spotify intake, synchronized lyrics, playback analytics, and a Svelte-based control surface backed by FastAPI and Redis.
+Wavox is a self-hosted Discord music bot platform with a real-time web dashboard. It combines Discord voice playback, YouTube and Spotify intake, synchronized lyrics, playback analytics, and a Svelte-based control surface backed by Node and Redis.
 
-The project is designed as an operational stack rather than a single bot process: the bot handles voice and command execution, the web backend brokers OAuth, APIs, and WebSocket streams, and the frontend provides a live dashboard for playback and guild administration.
+The project is designed as an operational stack rather than a single bot process: the bot handles voice and command execution, while the SvelteKit frontend also owns OAuth, REST APIs, WebSocket fan-out, and the browser-facing dashboard.
 
 ## Overview
 
@@ -22,16 +24,15 @@ The project is designed as an operational stack rather than a single bot process
 - Spotify track, album, and playlist intake resolved into playable sources
 - Real-time dashboard with WebSocket-driven playback state and lyrics updates
 - Per-user and per-guild listening analytics backed by SQLite
-- Docker Compose deployment with Redis, bot, API, and frontend services
+- Docker Compose deployment with Redis, bot, and frontend services
 
 ## Architecture
 
-Wavox is split into four runtime services:
+Wavox is split into three runtime services:
 
 1. `discord-bot`: executes slash commands, joins voice channels, resolves tracks, and streams audio
-2. `web`: FastAPI service for Discord OAuth, session handling, REST APIs, admin endpoints, and WebSocket fan-out
-3. `web-frontend`: SvelteKit application for the user dashboard and admin views
-4. `redis`: message bus for command dispatch and state/event distribution
+2. `web-frontend`: SvelteKit application for the user dashboard, OAuth, REST APIs, docs pages, and WebSocket fan-out
+3. `redis`: message bus for command dispatch and state/event distribution
 
 ```text
 Discord Users
@@ -43,11 +44,9 @@ Discord Users
     |                                         +-- SQLite analytics writes
     |                                         +-- Redis state + command bus
     |
-    +-- Browser --> web-frontend --> web (FastAPI) --> Redis --> discord-bot
-                               |            |
-                               |            +-- OAuth, session cookies, APIs
+    +-- Browser --> web-frontend --> Redis --> discord-bot
                                |
-                               +-- WebSocket dashboard updates
+                               +-- OAuth, session cookies, APIs, WebSockets
 ```
 
 For a deeper breakdown, see [docs/architecture.md](docs/architecture.md).
@@ -57,7 +56,7 @@ For a deeper breakdown, see [docs/architecture.md](docs/architecture.md).
 ```text
 .
 |-- app/                 # Discord bot, playback engine, media services, analytics
-|-- web/                 # FastAPI backend and MkDocs site content
+|-- web/                 # Legacy web assets and static docs source
 |-- web-frontend/        # SvelteKit dashboard frontend
 |-- docker-compose.yaml  # Multi-service local/prod orchestration
 |-- Dockerfile           # Discord bot image
@@ -135,7 +134,7 @@ Equivalent text-command aliases are also available through the configured prefix
 - Configure OAuth redirect URIs for the dashboard login flow
 - Invite the bot to your server with the required permissions
 
-The static site under `web/docs/` includes an invite guide at [web/docs/invite.md](web/docs/invite.md).
+The repository still includes source legal and invite docs under `web/docs/`, while the live app serves their Svelte equivalents from `/docs`.
 
 ### 2. Configure Environment Variables
 
@@ -147,7 +146,7 @@ Minimal example:
 DISCORD__TOKEN=your_discord_bot_token_here
 DISCORD__CLIENT_ID=your_discord_application_client_id
 DISCORD__CLIENT_SECRET=your_discord_application_client_secret
-DISCORD__REDIRECT_URI=http://localhost:3500/dashboard/callback
+DISCORD__REDIRECT_URI=http://localhost:3000/dashboard/callback
 WEB_SECRET_KEY=replace_this_with_a_strong_secret
 WEB_ORIGIN=http://localhost:3000
 
@@ -178,8 +177,7 @@ docker compose -f docker-compose.yaml up -d
 | Service | Default URL |
 |---|---|
 | Frontend dashboard | `http://localhost:3000` |
-| FastAPI backend | `http://localhost:3500` |
-| Documentation site | `http://localhost:3500/docs` |
+| Documentation pages | `http://localhost:3000/docs` |
 
 In a production setup, the intended public entrypoint is a reverse proxy in front of the frontend and API services.
 
@@ -217,6 +215,7 @@ Available scripts:
 ## Runtime Notes
 
 - Redis is the event backbone for dashboard updates and command dispatch
+- OAuth, HTTP APIs, docs pages, and WebSocket fan-out now live inside the SvelteKit/Node frontend service
 - Playback state is cached per guild and streamed through WebSockets
 - Lyrics are fetched through `lrclib` and sent to the dashboard separately from progress events
 - SQLite stores play history and user interaction events
@@ -226,6 +225,7 @@ Available scripts:
 
 - [docs/architecture.md](docs/architecture.md)
 - [docs/configuration.md](docs/configuration.md)
+- [docs/design-direction.md](docs/design-direction.md)
 - [web/docs/index.md](web/docs/index.md)
 - [web/docs/invite.md](web/docs/invite.md)
 - [web/docs/privacy.md](web/docs/privacy.md)

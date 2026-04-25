@@ -11,7 +11,7 @@ The project reads configuration from the root `.env` file when started through D
 | `DISCORD__TOKEN` | Yes | Discord bot token used by `app/main.py` |
 | `DISCORD__CLIENT_ID` | Yes for dashboard | Discord OAuth application client ID |
 | `DISCORD__CLIENT_SECRET` | Yes for dashboard | Discord OAuth application client secret |
-| `DISCORD__REDIRECT_URI` | Yes for dashboard | OAuth callback URL handled by FastAPI |
+| `DISCORD__REDIRECT_URI` | Yes for dashboard | OAuth callback URL handled by the frontend service |
 
 ## Web Session Settings
 
@@ -43,7 +43,7 @@ DISCORD__TOKEN=your_discord_bot_token_here
 
 DISCORD__CLIENT_ID=your_discord_client_id
 DISCORD__CLIENT_SECRET=your_discord_client_secret
-DISCORD__REDIRECT_URI=http://localhost:3500/dashboard/callback
+DISCORD__REDIRECT_URI=http://localhost:3000/dashboard/callback
 
 WEB_SECRET_KEY=replace_this_with_a_long_random_secret
 WEB_ORIGIN=http://localhost:3000
@@ -62,12 +62,11 @@ DB_PATH=/app/data/history.db
 | Service | Default Port |
 |---|---|
 | `web-frontend` | `3000` |
-| `web` | `3500` |
 | `redis` | internal |
 
 ## Deployment Notes
 
-- In production, place a reverse proxy in front of the frontend and API
+- In production, place a reverse proxy in front of the frontend service
 - Make sure the OAuth redirect URI exactly matches the public callback URL
 - Use a strong `WEB_SECRET_KEY`
 - Set `WEB_COOKIE_SECURE=true` when serving over HTTPS

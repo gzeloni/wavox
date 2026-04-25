@@ -9,7 +9,15 @@
 </script>
 
 <section class="guilds-section">
-  <span class="guilds-label">{label}</span>
+  <div class="guilds-head">
+    <span class="guilds-label">{label}</span>
+    {#if selectedId}
+      <span class="guilds-meta">1 selected</span>
+    {:else if guilds.length > 0}
+      <span class="guilds-meta">{guilds.length} available</span>
+    {/if}
+  </div>
+
   {#if guilds.length === 0}
     <div class="empty-inline">No servers available.</div>
   {:else}
@@ -37,13 +45,26 @@
 </section>
 
 <style>
+  .guilds-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
   .guild-card {
     font: inherit;
     color: inherit;
   }
+
+  .guilds-meta,
   .empty-inline {
     color: var(--text-muted);
     font-size: 13px;
+  }
+
+  .empty-inline {
     padding: 8px 0;
   }
 </style>

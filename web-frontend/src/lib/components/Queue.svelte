@@ -20,24 +20,24 @@
 
 <div class="queue-card card">
   <div class="queue-header">
-    <h2>Queue</h2>
-    <div class="queue-actions">
-      {#if q.length > 0}
-        <span class="queue-count">{q.length} track{q.length > 1 ? 's' : ''}</span>
-        <button class="queue-clear-btn" on:click={clearQueue}>Clear</button>
-      {/if}
+    <div>
+      <div class="queue-kicker">Queue</div>
+      <h2>Up Next</h2>
     </div>
+    {#if q.length > 0}
+      <button class="queue-clear-btn" on:click={clearQueue}>Clear</button>
+    {/if}
   </div>
 
   {#if q.length === 0}
-    <div class="queue-empty">Queue is empty</div>
+    <div class="queue-empty">No queued tracks.</div>
   {:else}
     <ul class="queue-list">
       {#each q as t, i (i)}
         <li class="queue-item">
-          <span class="queue-pos">{i + 1}</span>
+          <span class="queue-pos">{String(i + 1).padStart(2, '0')}</span>
           <button class="queue-play-btn" title="Play now" on:click={() => skipTo(i + 1)} aria-label="Play">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+            Play
           </button>
           <span class="queue-title">{t.title ?? 'Unknown'}</span>
           <span class="queue-dur">{fmtTime(t.duration)}</span>
@@ -48,110 +48,115 @@
 </div>
 
 <style>
+  .queue-card {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    height: 100%;
+  }
+
   .queue-header {
     display: flex;
-    align-items: center;
+    align-items: start;
     justify-content: space-between;
-    margin-bottom: 16px;
+    gap: 12px;
   }
-  .queue-header h2 {
-    font-size: 0.9rem;
-    font-weight: 600;
-  }
-  .queue-actions {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .queue-count {
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-  .queue-clear-btn {
-    padding: 4px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: transparent;
+
+  .queue-kicker {
     color: var(--text-muted);
     font-size: 11px;
-    cursor: pointer;
-    transition: all 0.2s;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
-  .queue-clear-btn:hover {
-    border-color: var(--red);
-    color: var(--red);
+
+  .queue-header h2 {
+    margin-top: 4px;
+    font-size: 15px;
   }
-  .queue-list {
-    list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .queue-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    border-radius: 10px;
-    transition: background 0.15s;
-    position: relative;
-  }
-  .queue-item:hover {
-    background: var(--surface2);
-  }
-  .queue-pos {
+
+  .queue-clear-btn,
+  .queue-play-btn {
+    min-height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
     color: var(--text-muted);
     font-size: 12px;
-    min-width: 22px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    transition: opacity 0.15s;
-  }
-  .queue-play-btn {
-    display: none;
-    position: absolute;
-    left: 12px;
-    width: 22px;
-    height: 22px;
-    border: none;
-    border-radius: 50%;
-    background: var(--primary);
-    color: #fff;
     cursor: pointer;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    transition: transform 0.1s;
   }
-  .queue-play-btn :global(svg) {
-    width: 10px;
-    height: 10px;
-  }
+
+  .queue-clear-btn:hover,
   .queue-play-btn:hover {
-    transform: scale(1.15);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text);
   }
-  .queue-item:hover .queue-pos {
-    opacity: 0;
+
+  .queue-list {
+    list-style: none;
+    display: grid;
+    gap: 0;
   }
-  .queue-item:hover .queue-play-btn {
-    display: flex;
+
+  .queue-item {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(96, 121, 197, 0.14);
   }
+
+  .queue-item:last-child {
+    border-bottom: 0;
+  }
+
+  .queue-pos,
+  .queue-dur {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
   .queue-title {
-    flex: 1;
-    font-size: 13px;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 13px;
   }
-  .queue-dur {
-    color: var(--text-muted);
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-  }
+
   .queue-empty {
-    text-align: center;
-    padding: 24px;
     color: var(--text-muted);
     font-size: 13px;
+  }
+
+  @media (max-width: 640px) {
+    .queue-item {
+      grid-template-columns: auto auto 1fr;
+      grid-template-areas:
+        'pos action dur'
+        'title title title';
+    }
+
+    .queue-pos {
+      grid-area: pos;
+    }
+
+    .queue-play-btn {
+      grid-area: action;
+    }
+
+    .queue-title {
+      grid-area: title;
+      white-space: normal;
+    }
+
+    .queue-dur {
+      grid-area: dur;
+      justify-self: end;
+    }
   }
 </style>

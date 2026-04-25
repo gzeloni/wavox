@@ -54,5 +54,23 @@ services:
           cpus: '0.25'
           memory: 128M
 
+  web-frontend:
+    build: ./web-frontend
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - ORIGIN=${WEB_ORIGIN:-http://localhost:3000}
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    depends_on:
+      - web
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 192M
+
 volumes:
   redis_data:

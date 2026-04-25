@@ -1,0 +1,256 @@
+:root {
+  --bg: #0f0f13;
+  --surface: #1a1a24;
+  --surface2: #24243a;
+  --primary: #7c3aed;
+  --primary-hover: #6d28d9;
+  --primary-glow: rgba(124, 58, 237, 0.15);
+  --text: #e2e2e8;
+  --text-muted: #8888a0;
+  --border: #2a2a3e;
+  --green: #22c55e;
+  --red: #ef4444;
+  --gold: #f59e0b;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface2);
+  border-radius: 3px;
+}
+
+button {
+  font-family: inherit;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 28px;
+  border-radius: 10px;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px var(--primary-glow);
+}
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 20px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+.brand {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+.brand span {
+  color: var(--primary);
+}
+.header-nav {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.nav-link {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+  transition: all 0.2s;
+}
+.nav-link:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+.nav-link.active {
+  background: var(--primary-glow);
+  color: var(--primary);
+}
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.user-avatar:hover {
+  border-color: var(--primary);
+}
+.user-name {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.guilds-section {
+  margin-bottom: 28px;
+}
+.guilds-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+.guild-grid {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.guild-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.guild-card:hover {
+  border-color: var(--primary);
+  background: var(--surface2);
+}
+.guild-card.active {
+  border-color: var(--primary);
+  background: var(--primary-glow);
+  box-shadow: 0 0 20px var(--primary-glow);
+}
+.guild-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.guild-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.guild-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 24px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.admin-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--gold);
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 6px;
+}
+
+.premium-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #f59e0b, #ec4899);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 6px;
+}

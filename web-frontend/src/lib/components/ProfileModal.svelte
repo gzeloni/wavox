@@ -40,13 +40,17 @@
     if (e.target === e.currentTarget) onClose();
   }
 
+  function backdropKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') onClose();
+  }
+
   $: avatar = $session.me ? avatarUrl($session.me.user_id, $session.me.avatar, 128) : null;
   const HOUR_LABELS = ['00 - 06', '06 - 12', '12 - 18', '18 - 24'];
 </script>
 
 {#if open}
-  <div class="modal-overlay" on:click={backdrop} role="dialog" aria-modal="true">
-    <div class="modal">
+  <div class="modal-overlay" on:click={backdrop} on:keydown={backdropKeydown} tabindex="-1">
+    <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
       <button class="modal-close" on:click={onClose} aria-label="Close">&times;</button>
       {#if avatar}
         <img class="modal-avatar" src={avatar} alt="" />
@@ -115,18 +119,17 @@
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(3, 4, 10, 0.82);
     z-index: 100;
     display: flex;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(4px);
   }
   .modal {
     background: var(--surface);
-    border-radius: 20px;
+    border-radius: 10px;
     border: 1px solid var(--border);
-    padding: 32px;
+    padding: 20px;
     max-width: 480px;
     width: 90%;
     max-height: 85vh;
@@ -141,21 +144,21 @@
     height: 32px;
     border-radius: 50%;
     border: none;
-    background: var(--surface2);
+    background: rgba(255, 255, 255, 0.04);
     color: var(--text-muted);
     cursor: pointer;
     font-size: 18px;
     transition: all 0.2s;
   }
   .modal-close:hover {
-    background: var(--border);
+    background: rgba(255, 255, 255, 0.08);
     color: var(--text);
   }
   .modal-avatar {
     width: 64px;
     height: 64px;
     border-radius: 50%;
-    border: 3px solid var(--primary);
+    border: 1px solid var(--border);
     margin: 0 auto 12px;
     display: block;
   }
@@ -179,7 +182,8 @@
   }
   .stat-box {
     background: var(--surface2);
-    border-radius: 12px;
+    border: 1px solid rgba(96, 121, 197, 0.14);
+    border-radius: 8px;
     padding: 14px;
     text-align: center;
   }
@@ -220,7 +224,7 @@
     margin-bottom: 10px;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.08em;
   }
   .modal-list {
     list-style: none;
@@ -234,7 +238,7 @@
     font-size: 13px;
   }
   .modal-list li:hover {
-    background: var(--surface2);
+    background: rgba(255, 255, 255, 0.03);
   }
   .pos {
     color: var(--text-muted);
@@ -261,7 +265,7 @@
   .hour-bar-bg {
     flex: 1;
     height: 8px;
-    background: var(--surface2);
+    background: rgba(255, 255, 255, 0.06);
     border-radius: 4px;
     overflow: hidden;
   }

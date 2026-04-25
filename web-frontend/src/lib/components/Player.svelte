@@ -4,7 +4,11 @@
   import { fmtTime } from '$lib/utils';
   import type { PlaybackAction } from '$lib/types';
 
-  const loopLabels: Record<string, string> = { off: '', track: 'Looping track', queue: 'Looping queue' };
+  const loopLabels: Record<string, string> = {
+    off: 'Off',
+    track: 'Track',
+    queue: 'Queue'
+  };
 
   async function send(action: PlaybackAction, extra: Record<string, unknown> = {}) {
     const id = $guildId;
@@ -29,44 +33,91 @@
     send('goto', { position: pos });
   }
 
+  function seekWithKeyboard(e: KeyboardEvent) {
+    if (!$state?.now_playing?.duration) return;
+    const current = clamped;
+    const step = 5;
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      send('goto', { position: Math.max(current - step, 0) });
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      send('goto', { position: Math.min(current + step, dur) });
+    }
+  }
+
+  let sourceHost = '';
+
   $: np = $state?.now_playing ?? null;
   $: dur = np?.duration ?? 0;
   $: clamped = Math.min($elapsed, dur);
   $: pct = dur > 0 ? Math.min((clamped / dur) * 100, 100) : 0;
   $: loopMode = $state?.loop_mode ?? 'off';
+  $: queueDepth = $state?.queue?.length ?? 0;
+  $: if (np?.webpage_url) {
+    try {
+      sourceHost = new URL(np.webpage_url).hostname.replace(/^www\./, '');
+    } catch {
+      sourceHost = '';
+    }
+  } else {
+    sourceHost = '';
+  }
 </script>
 
 <div class="player-card card">
   {#if !np}
     <div class="empty-state">Nothing playing right now.</div>
   {:else}
-    <div class="track-info">
+    <div class="player-head">
+      <div class="player-copy">
+        <div class="player-kicker">Now Playing</div>
+        <h2 class="player-title">{np.title ?? '-'}</h2>
+        <div class="player-meta">
+          <span>{sourceHost || 'source unavailable'}</span>
+          <span>{queueDepth} queued</span>
+          <span>Loop {loopLabels[loopMode]}</span>
+        </div>
+      </div>
       {#if np.thumbnail}
         <img class="track-thumb" src={np.thumbnail} alt="" />
       {/if}
-      <div class="track-details">
-        <div class="track-title">{np.title ?? '-'}</div>
-        <div class="track-status">
-          <div
-            class="status-dot"
-            class:playing={$state?.is_playing}
-            class:paused={$state?.is_paused}
-          />
-          <span>
-            {#if $state?.is_playing}
-              Playing
-            {:else if $state?.is_paused}
-              Paused
-            {:else}
-              Stopped
-            {/if}
-          </span>
-        </div>
+    </div>
+
+    <div class="player-readout">
+      <div class="readout-item">
+        <span class="readout-label">State</span>
+        <strong>
+          {#if $state?.is_playing}
+            Playing
+          {:else if $state?.is_paused}
+            Paused
+          {:else}
+            Idle
+          {/if}
+        </strong>
+      </div>
+      <div class="readout-item">
+        <span class="readout-label">Elapsed</span>
+        <strong>{fmtTime(clamped)}</strong>
+      </div>
+      <div class="readout-item">
+        <span class="readout-label">Remaining</span>
+        <strong>{fmtTime(Math.max(dur - clamped, 0))}</strong>
       </div>
     </div>
 
-    <div class="progress">
-      <div class="progress-bar" on:click={seek} role="slider" tabindex="0" aria-valuenow={clamped}>
+    <div class="progress-block">
+      <div
+        class="progress-bar"
+        on:click={seek}
+        on:keydown={seekWithKeyboard}
+        role="slider"
+        tabindex="0"
+        aria-valuenow={clamped}
+        aria-valuemin="0"
+        aria-valuemax={dur}
+      >
         <div class="progress-fill" style="width:{pct}%"></div>
       </div>
       <div class="progress-times">
@@ -76,158 +127,179 @@
     </div>
 
     <div class="controls">
-      <button class="ctrl-btn" title="Shuffle" on:click={() => send('shuffle')} aria-label="Shuffle">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+      <button type="button" class="ctrl-btn" on:click={() => send('shuffle')} aria-label="Shuffle">Shf</button>
+      <button type="button" class="ctrl-btn" on:click={() => send('previous')} aria-label="Previous">Prev</button>
+      <button type="button" class="ctrl-btn main" on:click={togglePlay} aria-label="Play/Pause">
+        {#if $state?.is_playing}Pause{:else}Play{/if}
       </button>
-      <button class="ctrl-btn" title="Previous" on:click={() => send('previous')} aria-label="Previous">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-      </button>
-      <button class="ctrl-btn main" title="Play/Pause" on:click={togglePlay} aria-label="Play/Pause">
-        {#if $state?.is_playing}
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zm8 0h4v16h-4z"/></svg>
-        {:else}
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-        {/if}
-      </button>
-      <button class="ctrl-btn" title="Skip" on:click={() => send('skip')} aria-label="Skip">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-      </button>
-      <button class="ctrl-btn" class:active={loopMode !== 'off'} title="Loop" on:click={() => send('loop')} aria-label="Loop">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-      </button>
-      <button class="ctrl-btn danger" title="Stop & Disconnect" on:click={() => send('stop')} aria-label="Stop">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-      </button>
+      <button type="button" class="ctrl-btn" on:click={() => send('skip')} aria-label="Skip">Next</button>
+      <button type="button" class="ctrl-btn" class:active={loopMode !== 'off'} on:click={() => send('loop')} aria-label="Loop">Loop</button>
+      <button type="button" class="ctrl-btn danger" on:click={() => send('stop')} aria-label="Stop">Stop</button>
     </div>
-    <div class="loop-label">{loopLabels[loopMode] ?? ''}</div>
   {/if}
 </div>
 
 <style>
   .player-card {
-    padding: 28px;
-    margin-bottom: 20px;
+    display: grid;
+    gap: 16px;
+    padding: 18px;
   }
-  .track-info {
-    display: flex;
-    gap: 20px;
-    margin-bottom: 24px;
+
+  .player-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: start;
   }
-  .track-thumb {
-    width: 100px;
-    height: 100px;
-    border-radius: 12px;
-    object-fit: cover;
-    background: var(--surface2);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  }
-  .track-details {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 6px;
+
+  .player-copy {
     min-width: 0;
   }
-  .track-title {
-    font-size: 1rem;
-    font-weight: 600;
-    line-height: 1.4;
-  }
-  .track-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
+
+  .player-kicker,
+  .readout-label {
     color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--text-muted);
+
+  .player-title {
+    margin-top: 6px;
+    font-size: 1.15rem;
+    line-height: 1.3;
+    word-break: break-word;
   }
-  .status-dot.playing {
-    background: var(--green);
+
+  .player-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 12px;
   }
-  .status-dot.paused {
-    background: var(--red);
+
+  .track-thumb {
+    width: 96px;
+    height: 96px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 1px solid var(--border);
+    background: var(--surface2);
   }
-  .progress {
-    margin-bottom: 24px;
+
+  .player-readout {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
   }
+
+  .readout-item {
+    display: grid;
+    gap: 6px;
+    padding: 12px;
+    border: 1px solid rgba(96, 121, 197, 0.16);
+    border-radius: 8px;
+    background: var(--surface2);
+  }
+
+  .readout-item strong {
+    font-size: 13px;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+
+  .progress-block {
+    display: grid;
+    gap: 8px;
+  }
+
   .progress-bar {
     width: 100%;
-    height: 5px;
-    background: var(--surface2);
-    border-radius: 3px;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
     overflow: hidden;
     cursor: pointer;
-    transition: height 0.15s;
   }
-  .progress-bar:hover {
-    height: 8px;
-  }
+
   .progress-fill {
     height: 100%;
     background: var(--primary);
-    border-radius: 3px;
-    transition: width 0.3s linear;
   }
+
   .progress-times {
     display: flex;
     justify-content: space-between;
-    margin-top: 8px;
-    font-size: 11px;
+    gap: 10px;
     color: var(--text-muted);
+    font-size: 11px;
     font-variant-numeric: tabular-nums;
   }
+
   .controls {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
   }
+
   .ctrl-btn {
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    border: none;
-    background: var(--surface2);
-    color: var(--text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-  }
-  .ctrl-btn:hover {
-    background: var(--border);
+    min-width: 56px;
+    min-height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
     color: var(--text);
+    cursor: pointer;
   }
+
+  .ctrl-btn:hover,
   .ctrl-btn.active {
-    background: var(--primary);
-    color: #fff;
+    background: var(--surface2);
   }
+
   .ctrl-btn.main {
-    width: 48px;
-    height: 48px;
     background: var(--primary);
-    color: #fff;
+    border-color: var(--primary);
+    color: #041018;
   }
+
   .ctrl-btn.main:hover {
     background: var(--primary-hover);
-    transform: scale(1.05);
+    border-color: var(--primary-hover);
   }
+
   .ctrl-btn.danger:hover {
-    background: var(--red);
-    color: #fff;
+    border-color: rgba(239, 68, 68, 0.45);
+    color: #ffd6d6;
   }
-  .loop-label {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 8px;
-    text-align: center;
-    min-height: 16px;
+
+  @media (max-width: 720px) {
+    .player-head {
+      grid-template-columns: 1fr;
+    }
+
+    .player-readout {
+      grid-template-columns: 1fr;
+    }
+
+    .track-thumb {
+      width: 80px;
+      height: 80px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .ctrl-btn {
+      width: 100%;
+      min-width: 0;
+    }
   }
 </style>

@@ -7,6 +7,7 @@
   let lines: LRCLine[] = [];
   let plainLines: string[] = [];
   let meta = '';
+  let modeLabel = '';
   let statusMsg = 'Play a track to see synced lyrics.';
   let currentUrl: string | null = null;
   let currentLyricsKey = '';
@@ -21,6 +22,7 @@
     lines = [];
     plainLines = [];
     meta = '';
+    modeLabel = '';
     activeIdx = -1;
   }
 
@@ -43,13 +45,16 @@
 
     if (data.synced) {
       lines = parseLRC(data.synced);
+      modeLabel = 'Synced';
       statusMsg = '';
     } else if (data.plain) {
-      plainLines = data.plain.split('\n').map((l) => l || '\u00A0');
+      plainLines = data.plain.split('\n').map((line) => line || '\u00A0');
+      modeLabel = 'Plain';
       statusMsg = '';
     } else {
       statusMsg = 'No lyrics found for this track.';
     }
+
     if (data.artist || data.title) {
       meta = `${data.artist ?? ''} - ${data.title ?? ''}`;
     }
@@ -82,26 +87,27 @@
 
 <div class="lyrics-card card">
   <div class="lyrics-header">
-    <h2>Lyrics</h2>
-    <span class="lyrics-meta">{meta}</span>
+    <div>
+      <div class="lyrics-kicker">Lyrics</div>
+      <h2>{meta || 'Track text'}</h2>
+    </div>
+    {#if modeLabel}
+      <span class="lyrics-mode">{modeLabel}</span>
+    {/if}
   </div>
+
   <div class="lyrics-body" bind:this={container}>
     {#if statusMsg}
       <div class="lyrics-empty">{statusMsg}</div>
     {:else if lines.length > 0}
       {#each lines as line, i (i)}
-        <div
-          class="lyrics-line"
-          class:active={i === activeIdx}
-          class:past={i < activeIdx}
-          data-i={i}
-        >
+        <div class="lyrics-line" class:active={i === activeIdx} class:past={i < activeIdx} data-i={i}>
           {line.text}
         </div>
       {/each}
     {:else if plainLines.length > 0}
       {#each plainLines as line, i (i)}
-        <div class="lyrics-line">{line}</div>
+        <div class="lyrics-line plain">{line}</div>
       {/each}
     {/if}
   </div>
@@ -109,56 +115,86 @@
 
 <style>
   .lyrics-card {
-    padding: 20px;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    gap: 14px;
+    min-height: 320px;
+    padding: 16px;
   }
+
   .lyrics-header {
     display: flex;
-    align-items: center;
+    align-items: start;
     justify-content: space-between;
-    margin-bottom: 12px;
+    gap: 12px;
   }
-  .lyrics-header h2 {
-    font-size: 0.9rem;
-    font-weight: 600;
-  }
-  .lyrics-meta {
+
+  .lyrics-kicker {
+    color: var(--text-muted);
     font-size: 11px;
-    color: var(--text-muted);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
+
+  .lyrics-header h2 {
+    margin-top: 4px;
+    font-size: 15px;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .lyrics-mode {
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-muted);
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+  }
+
   .lyrics-body {
-    flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    max-height: 420px;
   }
+
   .lyrics-line {
-    padding: 4px 8px;
-    border-radius: 6px;
-    font-size: 13px;
-    line-height: 1.8;
-    color: var(--text-muted);
-    transition: all 0.3s ease;
+    max-width: 72ch;
+    padding: 8px 0;
+    color: rgba(238, 242, 255, 0.55);
+    font-size: 14px;
+    line-height: 1.75;
   }
+
   .lyrics-line.active {
     color: var(--text);
-    background: var(--primary-glow);
-    font-weight: 500;
+    font-weight: 600;
   }
+
   .lyrics-line.past {
-    color: var(--text-muted);
     opacity: 0.5;
   }
-  .lyrics-empty {
-    text-align: center;
-    padding: 40px 16px;
-    color: var(--text-muted);
-    font-size: 13px;
+
+  .lyrics-line.plain {
+    color: rgba(238, 242, 255, 0.72);
   }
-  @media (max-width: 768px) {
-    .lyrics-body {
-      max-height: 250px;
+
+  .lyrics-empty {
+    color: var(--text-muted);
+    font-size: 14px;
+    padding: 12px 0;
+  }
+
+  @media (max-width: 640px) {
+    .lyrics-header {
+      flex-direction: column;
+      align-items: start;
+    }
+
+    .lyrics-line {
+      font-size: 13px;
     }
   }
 </style>

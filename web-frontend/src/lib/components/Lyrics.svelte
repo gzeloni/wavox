@@ -61,6 +61,27 @@
   }
 
   let scrollRAF: number | null = null;
+
+  function clampScrollTop(value: number) {
+    const maxScrollTop = Math.max(container.scrollHeight - container.clientHeight, 0);
+    return Math.min(Math.max(value, 0), maxScrollTop);
+  }
+
+  function scrollLineIntoLyricsView(line: HTMLDivElement) {
+    const containerRect = container.getBoundingClientRect();
+    const lineRect = line.getBoundingClientRect();
+    const centeredTop =
+      container.scrollTop +
+      lineRect.top -
+      containerRect.top -
+      (container.clientHeight - lineRect.height) / 2;
+
+    container.scrollTo({
+      top: clampScrollTop(centeredTop),
+      behavior: 'smooth'
+    });
+  }
+
   function updateActive(e: number) {
     if (lines.length === 0) return;
     let idx = -1;
@@ -75,7 +96,7 @@
       if (scrollRAF) cancelAnimationFrame(scrollRAF);
       scrollRAF = requestAnimationFrame(() => {
         const el = container?.querySelector<HTMLDivElement>(`[data-i="${idx}"]`);
-        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (el) scrollLineIntoLyricsView(el);
       });
     }
   }

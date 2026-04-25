@@ -8,6 +8,7 @@ RUN npm install --no-audit --no-fund
 
 COPY svelte.config.js vite.config.ts tsconfig.json ./
 COPY src ./src
+COPY server ./server
 COPY static ./static
 
 RUN npm run build && npm prune --omit=dev
@@ -22,6 +23,8 @@ ENV NODE_ENV=production \
 COPY --from=build /app/build ./build
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/server ./server
+COPY server.js ./server.js
 
 EXPOSE 3000
-CMD ["node", "build"]
+CMD ["node", "server.js"]

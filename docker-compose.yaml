@@ -36,36 +36,22 @@ services:
           cpus: '0.50'
           memory: 512M
 
-  web:
-    build: ./web
-    env_file:
-      - .env
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-    ports:
-      - "3500:3500"
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
-
   web-frontend:
     build: ./web-frontend
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - PORT=3000
       - HOST=0.0.0.0
       - ORIGIN=${WEB_ORIGIN:-http://localhost:3000}
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "3000:3000"
     restart: unless-stopped
     depends_on:
-      - web
+      redis:
+        condition: service_healthy
     deploy:
       resources:
         limits:

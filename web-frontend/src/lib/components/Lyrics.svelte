@@ -117,7 +117,8 @@
   .lyrics-card {
     display: grid;
     gap: 14px;
-    min-height: 320px;
+    height: 420px;
+    max-height: 420px;
     padding: 16px;
   }
 
@@ -158,6 +159,7 @@
   .lyrics-body {
     min-height: 0;
     overflow-y: auto;
+    max-height: 100%;
   }
 
   .lyrics-line {
@@ -188,6 +190,11 @@
   }
 
   @media (max-width: 640px) {
+    .lyrics-card {
+      height: 280px;
+      max-height: 280px;
+    }
+
     .lyrics-header {
       flex-direction: column;
       align-items: start;

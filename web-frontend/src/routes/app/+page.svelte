@@ -77,12 +77,12 @@
           <div class="workspace-player">
             <Player />
           </div>
-          <aside class="workspace-queue">
-            <Queue />
-          </aside>
           <div class="workspace-lyrics">
             <Lyrics />
           </div>
+          <aside class="workspace-queue">
+            <Queue />
+          </aside>
         </section>
       {:else}
         <div class="card empty-state">
@@ -98,16 +98,18 @@
 <style>
   .workspace-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.75fr);
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
     grid-template-areas:
-      'player queue'
-      'lyrics lyrics';
+      'player lyrics'
+      'queue queue';
     gap: 14px;
+    align-items: start;
   }
 
   .workspace-player {
     grid-area: player;
     min-width: 0;
+    display: flex;
   }
 
   .workspace-queue {
@@ -118,6 +120,13 @@
   .workspace-lyrics {
     grid-area: lyrics;
     min-width: 0;
+    display: flex;
+  }
+
+  .workspace-player :global(.player-card),
+  .workspace-lyrics :global(.lyrics-card) {
+    width: 100%;
+    height: 420px;
   }
 
   .workspace-banner {
@@ -170,8 +179,13 @@
       grid-template-columns: 1fr;
       grid-template-areas:
         'player'
-        'queue'
-        'lyrics';
+        'lyrics'
+        'queue';
+    }
+
+    .workspace-player :global(.player-card),
+    .workspace-lyrics :global(.lyrics-card) {
+      height: auto;
     }
   }
 

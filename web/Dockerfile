@@ -11,6 +11,5 @@ COPY docs/ docs/
 RUN mkdocs build
 
 COPY server.py .
-COPY templates/ templates/
 
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "3500"]

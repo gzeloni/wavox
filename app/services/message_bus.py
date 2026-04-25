@@ -11,27 +11,32 @@ _bot = None
 _redis = None
 _state_queue: asyncio.Queue | None = None
 _publisher_task = None
+_progress_task = None
 _consumer_task = None
 
 REDIS_URL = getenv("REDIS_URL", "redis://redis:6379/0")
+STATE_TICK_INTERVAL = 0.25
 
 
 async def init_bus(bot):
-    global _bot, _redis, _state_queue, _publisher_task, _consumer_task
+    global _bot, _redis, _state_queue, _publisher_task, _progress_task, _consumer_task
 
     _bot = bot
     _redis = redis.from_url(REDIS_URL, decode_responses=True)
     _state_queue = asyncio.Queue(maxsize=256)
 
     _publisher_task = asyncio.create_task(_state_publisher())
+    _progress_task = asyncio.create_task(_progress_publisher())
     _consumer_task = asyncio.create_task(_command_consumer())
     log.info("Message bus connected (Redis pub/sub)")
 
 
 async def close_bus():
-    global _publisher_task, _consumer_task
+    global _publisher_task, _progress_task, _consumer_task
     if _publisher_task:
         _publisher_task.cancel()
+    if _progress_task:
+        _progress_task.cancel()
     if _consumer_task:
         _consumer_task.cancel()
     if _redis:
@@ -65,7 +70,70 @@ async def unregister_guild(guild_id):
             pass
 
 
+def _get_guild(guild_id):
+    return _bot.get_guild(int(guild_id)) if _bot else None
+
+
+async def _get_member(guild_id, user_id):
+    guild = _get_guild(guild_id)
+    if not guild or not user_id:
+        return None
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return None
+    member = guild.get_member(uid)
+    if member:
+        return member
+    try:
+        return await guild.fetch_member(uid)
+    except Exception:
+        return None
+
+
+async def _member_is_admin(guild_id, user_id):
+    member = await _get_member(guild_id, user_id)
+    if not member:
+        return False
+    perms = getattr(member, "guild_permissions", None)
+    return bool(perms and (perms.administrator or perms.manage_guild))
+
+
+async def _member_is_in_bot_voice_channel(guild_id, user_id, voice_client):
+    member = await _get_member(guild_id, user_id)
+    if not member or not voice_client or not voice_client.channel:
+        return False
+    member_voice = getattr(member, "voice", None)
+    member_channel = getattr(member_voice, "channel", None)
+    return bool(member_channel and member_channel.id == voice_client.channel.id)
+
+
+async def _respond_json(request_id, payload):
+    if not request_id or not _redis:
+        return
+    await _redis.lpush(f"wavox:response:{request_id}", json.dumps(payload))
+    await _redis.expire(f"wavox:response:{request_id}", 30)
+
+
 # --- State publisher (dedicated task, never touches audio loop) ---
+def _get_voice_client(guild_id):
+    if not _bot:
+        return None
+    for vc in _bot.voice_clients:
+        if vc.guild.id == guild_id:
+            return vc
+    return None
+
+
+async def _publish_state(guild_id):
+    if not _redis:
+        return
+
+    state = _build_state(guild_id)
+    payload = json.dumps({"type": "state_update", "data": state})
+
+    await _redis.publish(f"wavox:events:{guild_id}", payload)
+    await _redis.set(f"wavox:guild:{guild_id}:state", payload, ex=300)
 
 async def _state_publisher():
     while True:
@@ -83,13 +151,7 @@ async def _state_publisher():
 
             for gid in guilds:
                 try:
-                    state = _build_state(gid)
-                    payload = json.dumps({"type": "state_update", "data": state})
-
-                    await _redis.publish(f"wavox:events:{gid}", payload)
-                    await _redis.set(
-                        f"wavox:guild:{gid}:state", payload, ex=300
-                    )
+                    await _publish_state(gid)
                 except Exception as e:
                     log.warning("State publish error for guild %s: %s", gid, e)
 
@@ -100,8 +162,42 @@ async def _state_publisher():
             await asyncio.sleep(1)
 
 
+def _get_progress_guild_ids():
+    from services.music import _players
+
+    guild_ids = []
+    for guild_id, player in list(_players.items()):
+        if not player.current_track:
+            continue
+
+        voice_client = _get_voice_client(guild_id)
+        if not voice_client or not voice_client.is_connected():
+            continue
+        if voice_client.is_playing() or voice_client.is_paused():
+            guild_ids.append(guild_id)
+
+    return guild_ids
+
+
+async def _progress_publisher():
+    while True:
+        try:
+            await asyncio.sleep(STATE_TICK_INTERVAL)
+
+            for guild_id in _get_progress_guild_ids():
+                try:
+                    await _publish_state(guild_id)
+                except Exception as e:
+                    log.warning("Progress publish error for guild %s: %s", guild_id, e)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            log.error("Progress publisher error: %s", e)
+            await asyncio.sleep(1)
+
+
 def _build_state(guild_id):
-    from services.music import get_player, _players
+    from services.music import get_elapsed, _players
 
     p = _players.get(guild_id)
     state = {
@@ -114,20 +210,21 @@ def _build_state(guild_id):
 
     if p and p.current_track:
         track = p.current_track
-        voice_client = None
-        for vc in _bot.voice_clients:
-            if vc.guild.id == guild_id:
-                voice_client = vc
-                break
+        voice_client = _get_voice_client(guild_id)
+        elapsed = get_elapsed(guild_id)
+        duration = track.get("duration")
+        if duration:
+            elapsed = min(elapsed, duration)
 
         state["now_playing"] = {
             "title": track.get("title"),
             "thumbnail": track.get("thumbnail"),
             "webpage_url": track.get("webpage_url"),
-            "duration": track.get("duration"),
+            "duration": duration,
             "started_at": p.playback_start_time or 0,
             "offset": p.playback_offset,
             "paused_at": p.pause_time,
+            "elapsed": elapsed,
         }
         if voice_client:
             state["is_playing"] = voice_client.is_playing()
@@ -177,11 +274,27 @@ async def _handle_command(guild_id, cmd):
     import random
 
     action = cmd.get("action")
+    try:
+        user_id = int(cmd.get("user_id", 0) or 0)
+    except (TypeError, ValueError):
+        user_id = 0
 
     if action == "get_user_status":
+        if not await _get_member(guild_id, user_id):
+            await _respond_json(cmd.get("request_id"), {})
+            return
         await _handle_user_status(guild_id, cmd)
         return
+    if action == "get_guild_overview":
+        if not await _member_is_admin(guild_id, user_id):
+            await _respond_json(cmd.get("request_id"), {})
+            return
+        await _handle_guild_overview(guild_id, cmd)
+        return
     if action == "search":
+        if not await _get_member(guild_id, user_id):
+            await _respond_json(cmd.get("request_id"), [])
+            return
         await _handle_search(guild_id, cmd)
         return
 
@@ -192,6 +305,9 @@ async def _handle_command(guild_id, cmd):
             break
 
     if not voice_client:
+        return
+    if not await _member_is_in_bot_voice_channel(guild_id, user_id, voice_client):
+        log.info("Rejected %s command for guild %s from unrelated user %s", action, guild_id, user_id)
         return
 
     if action == "pause":
@@ -242,7 +358,7 @@ async def _handle_command(guild_id, cmd):
     elif action == "play":
         query = cmd.get("query", "")
         if query:
-            await _handle_play(guild_id, voice_client, query, cmd.get("user_id", 0))
+            await _handle_play(guild_id, voice_client, query, user_id)
 
     notify_state(guild_id)
 
@@ -298,6 +414,67 @@ async def _handle_user_status(guild_id, cmd):
         }
     else:
         result = {}
+
+    await _redis.lpush(f"wavox:response:{request_id}", json.dumps(result))
+    await _redis.expire(f"wavox:response:{request_id}", 30)
+
+
+async def _handle_guild_overview(guild_id, cmd):
+    from services.database import get_recent, get_top_tracks, get_most_active
+
+    request_id = cmd.get("request_id")
+    if not request_id or not _redis:
+        return
+
+    guild = _bot.get_guild(guild_id) if _bot else None
+    member_count = guild.member_count if guild else None
+    guild_name = guild.name if guild else None
+
+    player = None
+    try:
+        from services.music import _players
+        player = _players.get(guild_id)
+    except Exception:
+        pass
+
+    voice_connected = False
+    voice_channel = None
+    if _bot:
+        for vc in _bot.voice_clients:
+            if vc.guild.id == guild_id and vc.is_connected():
+                voice_connected = True
+                voice_channel = vc.channel.name if vc.channel else None
+                break
+
+    recent = [
+        {
+            "title": r["track_title"],
+            "user_id": str(r["user_id"]) if r["user_id"] else None,
+            "played_at": r["played_at"],
+        }
+        for r in get_recent(guild_id, limit=20)
+    ]
+    top_tracks = [
+        {"title": r["track_title"], "plays": r["plays"]}
+        for r in get_top_tracks(guild_id, limit=10)
+    ]
+    most_active = [
+        {"user_id": str(r["user_id"]) if r["user_id"] else None, "plays": r["plays"]}
+        for r in get_most_active(guild_id, limit=10)
+    ]
+
+    result = {
+        "guild_name": guild_name,
+        "member_count": member_count,
+        "voice_connected": voice_connected,
+        "voice_channel": voice_channel,
+        "is_playing": bool(player and player.current_track),
+        "queue_size": len(player.queue) if player else 0,
+        "loop_mode": player.loop_mode if player else "off",
+        "recent": recent,
+        "top_tracks": top_tracks,
+        "most_active": most_active,
+    }
 
     await _redis.lpush(f"wavox:response:{request_id}", json.dumps(result))
     await _redis.expire(f"wavox:response:{request_id}", 30)

@@ -58,9 +58,8 @@ def create_bot():
         if member == bot.user and before.channel and not after.channel:
             if before.channel.guild:
                 clear_queue(before.channel.guild.id)
-                from services.message_bus import unregister_guild
-                import asyncio
-                asyncio.create_task(unregister_guild(before.channel.guild.id))
+                from services.message_bus import notify_state
+                notify_state(before.channel.guild.id)
                 log.info("Cleaned up queue for guild %s", before.channel.guild.id)
             return
 
